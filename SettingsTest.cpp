@@ -5,16 +5,18 @@
 
 
 #include "SettingsTest.h"
+#include "SettingTypes.h"
 #include <StringList.h>
 #include <Message.h>
+
 //#include <DriverSettingsMessageAdapter.h>
 
 SettingsTest::SettingsTest(){
 	/*	BDriverSettings	*settings	= new BDriverSettings();
 	 *	settings->Load("/boot/home/config/settings/SettingsTest/DriveSettingsTest");
 	 */
-	int32	*b;
-	ssize_t *numBytes;
+	int32	*b = new int32;
+	ssize_t *numBytes = new ssize_t;
 	BMessage settingsTestMessage = BMessage();
 	settingsTestMessage.AddInt32("MyInt",32);
 	settingsTestMessage.PrintToStream();
@@ -22,7 +24,7 @@ SettingsTest::SettingsTest(){
 	*b = 5;
 	settingsTestMessage.PrintToStream();
 	
-	/** Testing Codycam settings
+	// Testing settings
 	StringValueSetting* sValue		= new StringValueSetting("MyStringSetting", "StringValue",
 								  	  "server address expected");
 	BooleanValueSetting*	sBool	= new BooleanValueSetting("BooleanSetting", true);
@@ -37,9 +39,6 @@ SettingsTest::SettingsTest(){
 	mySettings->Add(sStringList);
 	mySettings->TryReadingSettings();
 	mySettings->SaveSettings(false);
-	*/
-	
-
 }
 
 

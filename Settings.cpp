@@ -1,341 +1,193 @@
 #include "Settings.h"
-
+#include "SettingsHandler.h"
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include <Catalog.h>
 #include <Debug.h>
+#include <Directory.h>
+#include <Entry.h>
+#include <File.h>
+#include <FindDirectory.h>
 #include <Locale.h>
-
+#include <Path.h>
+#include <StopWatch.h>
 
 #undef B_TRANSLATION_CONTEXT
-#define B_TRANSLATION_CONTEXT "Settings"
+#define B_TRANSLATION_CONTEXT "Setting"
 
 
-Settings* settings = NULL;
+//	#pragma mark -
 
 
-StringValueSetting::StringValueSetting(const char* name,
-	const char* defaultValue, const char* valueExpectedErrorString,
-	const char* wrongValueErrorString)
+/*!	\class Settings
+	this class represents a list of all the settings handlers, reads and
+	saves the settings file
+*/
+
+
+Settings::Settings(const char* filename, const char* settingsDirName)
 	:
-	SettingsArgvDispatcher(name),
-	fDefaultValue(defaultValue),
-	fValueExpectedErrorString(valueExpectedErrorString),
-	fWrongValueErrorString(wrongValueErrorString),
-	fValue(strdup(defaultValue))
+	fFileName(filename),
+	fSettingsDir(settingsDirName),
+	fList(0),
+	fCount(0),
+	fListSize(30),
+	fCurrentSettings(0)
 {
+#ifdef SINGLE_SETTING_FILE
+	settingsHandler = this;
+#endif
+	fList = (SettingsArgvDispatcher**)calloc(fListSize, sizeof(SettingsArgvDispatcher *));
 }
 
 
-StringValueSetting::~StringValueSetting()
+Settings::~Settings()
 {
-	free(fValue);
+	for (int32 index = 0; index < fCount; index++)
+		delete fList[index];
+
+	free(fList);
+}
+
+
+const char*
+Settings::_ParseUserSettings(int, const char* const *argv, void* castToThis)
+{
+	if (!*argv)
+		return 0;
+
+#ifdef SINGLE_SETTING_FILE
+	Settings* settings = settingsHandler;
+#else
+	Settings* settings = (Settings*)castToThis;
+#endif
+
+	SettingsArgvDispatcher* handler = settings->_Find(*argv);
+	if (!handler)
+		return B_TRANSLATE("unknown command");
+	return handler->Handle(argv);
+}
+
+
+/*!
+	Returns false if argv dispatcher with the same name already
+	registered
+*/
+bool
+Settings::Add(SettingsArgvDispatcher* setting)
+{
+	// check for uniqueness
+	if (_Find(setting->Name()))
+		return false;
+
+	if (fCount >= fListSize) {
+		fListSize += 30;
+		fList = (SettingsArgvDispatcher **)realloc(fList,
+			fListSize * sizeof(SettingsArgvDispatcher *));
+	}
+	fList[fCount++] = setting;
+	return true;
+}
+
+
+SettingsArgvDispatcher*
+Settings::_Find(const char* name)
+{
+	for (int32 index = 0; index < fCount; index++)
+		if (strcmp(name, fList[index]->Name()) == 0)
+			return fList[index];
+
+	return 0;
 }
 
 
 void
-StringValueSetting::ValueChanged(const char* newValue)
+Settings::TryReadingSettings()
 {
-	if (newValue == fValue)
-		// guard against self assingment
+	BPath prefsPath;
+	if (find_directory(B_USER_SETTINGS_DIRECTORY, &prefsPath, true) == B_OK) {
+		prefsPath.Append(fSettingsDir);
+
+		BPath path(prefsPath);
+		path.Append(fFileName);
+		ArgvParser::EachArgv(path.Path(), Settings::_ParseUserSettings, this);
+	}
+}
+
+
+void
+Settings::SaveSettings(bool onlyIfNonDefault)
+{
+	ASSERT(SettingsHandler());
+	SettingsHandler()->_SaveCurrentSettings(onlyIfNonDefault);
+}
+
+
+void
+Settings::_MakeSettingsDirectory(BDirectory *resultingSettingsDir)
+{
+	BPath path;
+	if (find_directory(B_USER_SETTINGS_DIRECTORY, &path, true) != B_OK)
 		return;
 
-	free(fValue);
-	fValue = strdup(newValue);
-}
-
-
-const char*
-StringValueSetting::Value() const
-{
-	return fValue;
+	// make sure there is a directory
+	path.Append(fSettingsDir);
+	mkdir(path.Path(), 0777);
+	resultingSettingsDir->SetTo(path.Path());
 }
 
 
 void
-StringValueSetting::SaveSettingValue(Settings* settings)
+Settings::_SaveCurrentSettings(bool onlyIfNonDefault)
 {
-	printf("-----StringValueSetting::SaveSettingValue %s %s\n", Name(), fValue);
-	settings->Write("\"%s\"", fValue);
-}
+	BDirectory fSettingsDir;
+	_MakeSettingsDirectory(&fSettingsDir);
 
+	if (fSettingsDir.InitCheck() != B_OK)
+		return;
 
-bool
-StringValueSetting::NeedsSaving() const
-{
-	// needs saving if different than default
-	return strcmp(fValue, fDefaultValue) != 0;
-}
+	printf("+++++++++++ Settings::_SaveCurrentSettings %s\n", fFileName);
+	// nuke old settings
+	BEntry entry(&fSettingsDir, fFileName);
+	entry.Remove();
 
+	BFile prefs(&entry, O_RDWR | O_CREAT);
+	if (prefs.InitCheck() != B_OK)
+		return;
 
-const char*
-StringValueSetting::Handle(const char *const *argv)
-{
-	if (!*++argv)
-		return fValueExpectedErrorString;
+	fCurrentSettings = &prefs;
+	for (int32 index = 0; index < fCount; index++) {
+		fList[index]->SaveSettings(this, onlyIfNonDefault);
+	}
 
-	ValueChanged(*argv);
-	return 0;
-}
-
-
-//	#pragma mark -
-
-
-EnumeratedStringValueSetting::EnumeratedStringValueSetting(const char* name,
-	const char* defaultValue, StringEnumerator enumerator,
-	const char* valueExpectedErrorString,
-	const char* wrongValueErrorString)
-	:
-	StringValueSetting(name, defaultValue, valueExpectedErrorString,
-		wrongValueErrorString),
-	fEnumerator(enumerator)
-{
+	fCurrentSettings = 0;
 }
 
 
 void
-EnumeratedStringValueSetting::ValueChanged(const char* newValue)
+Settings::Write(const char* format, ...)
 {
-#if DEBUG
-	// must be one of the enumerated values
-	ASSERT(_ValidateString(newValue));
+	va_list args;
+
+	va_start(args, format);
+	VSWrite(format, args);
+	va_end(args);
+}
+
+
+void
+Settings::VSWrite(const char* format, va_list arg)
+{
+	char buffer[2048];
+	vsprintf(buffer, format, arg);
+	ASSERT(fCurrentSettings && fCurrentSettings->InitCheck() == B_OK);
+	fCurrentSettings->Write(buffer, strlen(buffer));
+}
+
+
+#ifdef SINGLE_SETTING_FILE
+Settings* Settings::settingsHandler = 0;
 #endif
-	StringValueSetting::ValueChanged(newValue);
-}
-
-
-const char*
-EnumeratedStringValueSetting::Handle(const char *const *argv)
-{
-	if (!*++argv)
-		return fValueExpectedErrorString;
-
-	printf("---EnumeratedStringValueSetting::Handle %s %s\n", *(argv-1), *argv);
-	if (!_ValidateString(*argv))
-		return fWrongValueErrorString;
-
-	ValueChanged(*argv);
-	return 0;
-}
-
-
-bool
-EnumeratedStringValueSetting::_ValidateString(const char* string)
-{
-	for (int32 i = 0;; i++) {
-		const char* enumString = fEnumerator(i);
-		if (!enumString)
-			return false;
-		if (strcmp(enumString, string) == 0)
-			return true;
-	}
-	return false;
-}
-
-
-//	#pragma mark -
-
-
-ScalarValueSetting::ScalarValueSetting(const char* name, int32 defaultValue,
-	const char* valueExpectedErrorString, const char* wrongValueErrorString,
-	int32 min, int32 max)
-	: SettingsArgvDispatcher(name),
-	fDefaultValue(defaultValue),
-	fValue(defaultValue),
-	fMax(max),
-	fMin(min),
-	fValueExpectedErrorString(valueExpectedErrorString),
-	fWrongValueErrorString(wrongValueErrorString)
-{
-}
-
-
-ScalarValueSetting::~ScalarValueSetting()
-{
-}
-
-
-void
-ScalarValueSetting::ValueChanged(int32 newValue)
-{
-	ASSERT(newValue > fMin);
-	ASSERT(newValue < fMax);
-	fValue = newValue;
-}
-
-
-int32
-ScalarValueSetting::Value() const
-{
-	return fValue;
-}
-
-
-void
-ScalarValueSetting::GetValueAsString(char* buffer) const
-{
-	sprintf(buffer, "%" B_PRId32, fValue);
-}
-
-
-const char*
-ScalarValueSetting::Handle(const char *const *argv)
-{
-	if (!*++argv)
-		return fValueExpectedErrorString;
-
-	int32 newValue = atoi(*argv);
-	if (newValue < fMin || newValue > fMax)
-		return fWrongValueErrorString;
-
-	fValue = newValue;
-	return 0;
-}
-
-
-void
-ScalarValueSetting::SaveSettingValue(Settings* settings)
-{
-	settings->Write("%d", fValue);
-}
-
-
-bool
-ScalarValueSetting::NeedsSaving() const
-{
-	return fValue != fDefaultValue;
-}
-
-
-//	#pragma mark -
-
-
-BooleanValueSetting::BooleanValueSetting(const char* name, bool defaultValue)
-	: ScalarValueSetting(name, defaultValue, 0, 0)
-{
-}
-
-
-BooleanValueSetting::~BooleanValueSetting()
-{
-}
-
-
-bool
-BooleanValueSetting::Value() const
-{
-	return fValue;
-}
-
-
-const char*
-BooleanValueSetting::Handle(const char *const *argv)
-{
-	if (!*++argv) {
-		return B_TRANSLATE_COMMENT("on or off expected","Do not translate "
-			"'on' and 'off'");
-	}
-
-	if (strcmp(*argv, "on") == 0)
-		fValue = true;
-	else if (strcmp(*argv, "off") == 0)
-		fValue = false;
-	else {
-		return B_TRANSLATE_COMMENT("on or off expected", "Do not translate "
-		"'on' and 'off'");
-	}
-
-	return 0;
-}
-
-
-void
-BooleanValueSetting::SaveSettingValue(Settings* settings)
-{
-	settings->Write(fValue ? "on" : "off");
-}
-
-
-
-StringListSetting::StringListSetting(const char* name,
-									BStringList* defaultPathList)
-	:
-	SettingsArgvDispatcher(name),
-	fDefaultStringList(defaultPathList),
-	fStringList(defaultPathList)
-{
-}
-
-
-StringListSetting::~StringListSetting()
-{
-	delete fDefaultStringList;
-	delete fStringList;
-}
-
-
-void
-StringListSetting::ValueChanged(BStringList *newList)
-{
-	fStringList=newList;
-}
-
-
-BStringList*
-StringListSetting::Value() const
-{
-	return fStringList;
-}
-
-
-void
-StringListSetting::SaveSettingValue(Settings* settings)
-{
-	if (fStringList->CountStrings()>0){
-		//write the first one with only one tab
-		settings->Write("\t %s ", fStringList->StringAt(0).String());	
-		for (int32 i=1; i<fStringList->CountStrings();i++) {
-			//first add a backslach
-			settings->Write("\\\n");
-			settings->Write("\t\t %s", fStringList->StringAt(i).String());
-		}
-		settings->Write("\n");
-	}
-}
-
-
-bool
-StringListSetting::NeedsSaving() const
-{
-	// needs saving if different than default
-	int32 i = 0;
-	if (fStringList->CountStrings() != fDefaultStringList->CountStrings())
-		return true;
-	for (i=0;i<fStringList->CountStrings();i++)
-	{
-		if (fDefaultStringList->HasString(fStringList->StringAt(i))!= true)
-			return true;
-	}
-	return false;
-}
-
-
-const char*
-StringListSetting::Handle(const char *const *argv)
-{
-	if (!*++argv) {
-		return "String expected";
-	}
-	fStringList->MakeEmpty();
-	int32 i=0;
-	while (argv[i]!=NULL)
-	{
-		fStringList->Add(argv[i]);
-		i++;
-	}
-	return 0;
-}
-
