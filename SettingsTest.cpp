@@ -24,7 +24,6 @@ SettingsTest::SettingsTest(){
 	Settings *subSettings			= new Settings("SubSettings","SettingsTest");
 	subSettings->Add(new StringValueSetting("MySubStringSettings","Cool Sub Setting String Value",""));
 	
-	SubSetting		*sSettings		= new SubSetting("SubSettings",subSettings);
 	
 	BStringList *pathList			= new BStringList();
 
@@ -38,10 +37,10 @@ SettingsTest::SettingsTest(){
 	mySettings->Add(sValue);
 	mySettings->Add(sBool);
 	mySettings->Add(sStringList);
-	mySettings->Add(sSettings);
 	mySettings->TryReadingSettings();
 	BString tmpString(pathList->StringAt(1));
 	mySettings->SaveSettings(false);
+	subSettings->SaveSettings(false);
 }
 
 
