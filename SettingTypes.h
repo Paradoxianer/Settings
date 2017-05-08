@@ -120,24 +120,24 @@ protected:
 			
 };
 
-//subsettings
+//Subsettings adds a subset of Settings to the settings.. 
 class SubSetting : public SettingsArgvDispatcher {
 public:
 								SubSetting(const char* name,
-									BStringList* defaultStringList);
+									Settings* defaultSettings);
 
-	virtual						~StringListSetting();
+	virtual						~SubSetting();
 
-			void				ValueChanged(BStringList *newList);
-			BStringList*		Value() const;
+			void				ValueChanged(Settings *newSettings);
+			Settings*			Value() const;
 	virtual const char*			Handle(const char *const *argv);
 
 protected:
 	virtual	void				SaveSettingValue(Settings*);
 	virtual	bool				NeedsSaving() const;
 	
-			BStringList*		fDefaultStringList;
-			BStringList*		fStringList;
+			Settings*			fDefaultSettings;
+			Settings*			fSettings;
 			
 };
 

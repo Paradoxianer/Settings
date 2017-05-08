@@ -263,10 +263,10 @@ BooleanValueSetting::SaveSettingValue(Settings* settings)
 StringListSetting::StringListSetting(const char* name,
 									BStringList* defaultPathList)
 	:
-	SettingsArgvDispatcher(name),
-	fDefaultStringList(defaultPathList),
-	fStringList(defaultPathList)
+	SettingsArgvDispatcher(name)
 {
+	fDefaultStringList=defaultPathList;
+	fStringList=defaultPathList;
 }
 
 
@@ -294,13 +294,16 @@ StringListSetting::Value() const
 void
 StringListSetting::SaveSettingValue(Settings* settings)
 {
-	if (fStringList->CountStrings()>0){
+	int32 countS = fStringList->CountStrings();
+	if (countS>0){
 		//write the first one with only one tab
-		settings->Write("\t %s ", fStringList->StringAt(0).String());	
-		for (int32 i=1; i<fStringList->CountStrings();i++) {
+		BString tmpString(fStringList->StringAt(0));
+		settings->Write("\t %s", tmpString.String());	
+		for (int32 i=1; i<countS;i++) {
 			//first add a backslach
 			settings->Write("\\\n");
-			settings->Write("\t\t %s", fStringList->StringAt(i).String());
+			tmpString=fStringList->StringAt(i);
+			settings->Write("\t\t %s", tmpString.String());
 		}
 		settings->Write("\n");
 	}
@@ -338,4 +341,67 @@ StringListSetting::Handle(const char *const *argv)
 	}
 	return 0;
 }
+
+
+
+
+
+
+SubSetting::SubSetting(const char* name,
+									Settings* defaultSettings)
+	:
+	SettingsArgvDispatcher(name),
+	fDefaultSettings(defaultSettings),
+	fSettings(defaultSettings)
+{
+}
+
+
+SubSetting::~SubSetting()
+{
+	delete fDefaultSettings;
+	delete fSettings;
+}
+
+
+void
+SubSetting::ValueChanged(Settings *newSettings)
+{
+	fSettings=newSettings;
+}
+
+
+Settings*
+SubSetting::Value() const
+{
+	return fSettings;
+}
+
+
+void
+SubSetting::SaveSettingValue(Settings* settings)
+{
+	fSettings->SaveSettings(false);
+}
+
+
+bool
+SubSetting::NeedsSaving() const
+{
+	// is alsways false because the subSetting takes care about the NeedsSaving
+	return false;
+}
+
+
+const char*
+SubSetting::Handle(const char *const *argv)
+{
+	if (!*++argv) {
+		return "String expected";
+	}
+	//instead of reading the arv we loading the settings
+	fSettings->TryReadingSettings();
+	return 0;
+}
+
 
