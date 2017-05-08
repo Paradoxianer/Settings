@@ -54,7 +54,7 @@ Settings::~Settings()
 
 
 const char*
-Settings::_ParseUserSettings(int, const char* const *argv, void* castToThis)
+Settings::ParseUserSettings(int, const char* const *argv, void* castToThis)
 {
 	if (!*argv)
 		return 0;
@@ -113,7 +113,7 @@ Settings::TryReadingSettings()
 
 		BPath path(prefsPath);
 		path.Append(fFileName);
-		ArgvParser::EachArgv(path.Path(), Settings::_ParseUserSettings, this);
+		ArgvParser::EachArgv(path.Path(), Settings::ParseUserSettings, this);
 	}
 }
 

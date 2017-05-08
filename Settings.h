@@ -23,12 +23,12 @@ class Settings {
 
 		void Write(const char* format, ...);
 		void VSWrite(const char*, va_list);
+static const char* ParseUserSettings(int, const char *const *argv, void*);
 
 	private:
 		void _MakeSettingsDirectory(BDirectory*);
 
 		SettingsArgvDispatcher* _Find(const char*);
-		static const char* _ParseUserSettings(int, const char *const *argv, void*);
 		void _SaveCurrentSettings(bool onlyIfNonDefault);
 
 		const char* fFileName;

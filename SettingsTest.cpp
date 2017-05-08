@@ -15,14 +15,6 @@ SettingsTest::SettingsTest(){
 	/*	BDriverSettings	*settings	= new BDriverSettings();
 	 *	settings->Load("/boot/home/config/settings/SettingsTest/DriveSettingsTest");
 	 */
-	int32	*b = new int32;
-	ssize_t *numBytes = new ssize_t;
-	BMessage settingsTestMessage = BMessage();
-	settingsTestMessage.AddInt32("MyInt",32);
-	settingsTestMessage.PrintToStream();
-	settingsTestMessage.FindData("MyInt",B_INT32_TYPE,(const void**)&b,numBytes);
-	*b = 5;
-	settingsTestMessage.PrintToStream();
 	
 	// Testing settings
 	StringValueSetting* sValue		= new StringValueSetting("MyStringSetting", "StringValue",
@@ -30,6 +22,8 @@ SettingsTest::SettingsTest(){
 	BooleanValueSetting*	sBool	= new BooleanValueSetting("BooleanSetting", true);
 	
 	BStringList *pathList			= new BStringList();
+	pathList->Add(BString("/boot/home"));
+	pathList->Add(BString("/boot/home/config"));
 	StringListSetting *sStringList	= new StringListSetting("MyPaths",pathList);
 	
 	mySettings = new Settings("SettingsTest","SettingsTest");
@@ -38,6 +32,7 @@ SettingsTest::SettingsTest(){
 	
 	mySettings->Add(sStringList);
 	mySettings->TryReadingSettings();
+	BString tmpString(pathList->StringAt(1));
 	mySettings->SaveSettings(false);
 }
 
